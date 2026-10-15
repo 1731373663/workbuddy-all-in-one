@@ -1,7 +1,9 @@
 # credentials (plaintext accessToken / refreshToken)
 auths/
 
-# runtime log
+# runtime state and log
+state.json
+run.log
 *.log
 
 # python cache

@@ -14,17 +14,34 @@
 ## 用法
 
 ```bash
-python workbuddy.py auto                  # 全部账号：每日功能 + 任务中心
+python workbuddy.py auto                  # 受守卫约束的完整运行（默认）
 python workbuddy.py daily                 # 只跑每日功能
 python workbuddy.py tasks                 # 只跑任务中心
 python workbuddy.py status                # 只读：查看签到状态
 python workbuddy.py doctor                # 离线检查凭据
-python workbuddy.py auto --account 1d07e826   # 指定账号
+python workbuddy.py auto --account <uid>  # 指定账号
+python workbuddy.py auto --include-global # 也处理 global realm 账号
+python workbuddy.py auto --force          # 跳过所有守卫
+python workbuddy.py auto --dry-run        # 只显示守卫判定，不发请求
 ```
+
+## 运行守卫
+
+`auto` / `daily` / `tasks` 会先读本地状态（零成本），全部通过才发请求：
+
+| 规则 | 默认值 |
+|---|---|
+| 每日成功上限 | 3 次 |
+| 每日尝试上限 | 5 次（3 次成功 + 2 次重试余量） |
+| 两次成功最小间隔 | 180 分钟 |
+| 失败后重试间隔 | 15 分钟 |
+| 网络探测 | 3 秒 TCP 连 `copilot.tencent.com:443`，不通则跳过且**不计尝试** |
+
+状态存在 `state.json`，按本地日期自动重置。`status` / `doctor` 等只读命令不消耗次数。
 
 ## 账号
 
-凭据放在 `auths/` 目录，每个账号一个 JSON 文件，格式与 WorkBuddy2API 一致：
+凭据放在 `auths/`，每个账号一个 JSON：
 
 ```json
 {
@@ -33,7 +50,7 @@ python workbuddy.py auto --account 1d07e826   # 指定账号
 }
 ```
 
-`auto` / `daily` / `tasks` 默认遍历 `auths/` 里的全部账号。`global` realm 的账号会被自动跳过（任务中心只适用 CN 域）。
+`global` realm 的账号默认跳过（任务中心只适用 CN 域），需要时加 `--include-global`。
 
 ## 定时任务（Windows）
 
@@ -41,10 +58,22 @@ python workbuddy.py auto --account 1d07e826   # 指定账号
 powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
 ```
 
-- `WorkBuddyAllInOne`：每天 00:05，全量执行
-- `WorkBuddyAllInOnePoll`：每 4 小时，补跑每日功能
+脚本会**自动提权**（解锁触发器需要管理员权限），注册任务 `WorkBuddyAllInOne`，含 4 个触发器：
 
-日志写入 `run.log`。
+| 触发器 | 说明 |
+|---|---|
+| LogonTrigger | 登录后 |
+| SessionStateChangeTrigger (SessionUnlock) | 每次解锁屏幕 |
+| CalendarTrigger 11:00 | 每日兜底 |
+| CalendarTrigger 19:00 | 每日兜底 |
+
+配合守卫，解锁十几次也不会重复打接口。日志写入 `run.log`。
+
+卸载：
+
+```powershell
+Unregister-ScheduledTask -TaskName "WorkBuddyAllInOne" -Confirm:$false
+```
 
 ## 免责声明
 
