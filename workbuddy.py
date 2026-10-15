@@ -7,15 +7,14 @@ Merged from:
   * scripts/task_runner.py  - growth task center auto-complete
                               (from bbb2bb/workbuddy-task-helper)
 
-Both read the same credential shape, so one account pool drives both.
-
 Usage:
-  python workbuddy.py auto                  # all accounts: daily + tasks
+  python workbuddy.py auto                  # all CN accounts: daily + tasks
   python workbuddy.py daily                 # daily only
   python workbuddy.py tasks                 # task center only
   python workbuddy.py status                # read-only checkin status
   python workbuddy.py doctor                # offline credential check
   python workbuddy.py auto --account <uid>  # single account
+  python workbuddy.py auto --include-global # also run global realm accounts
 """
 import glob
 import json
@@ -30,15 +29,25 @@ DAILY = os.path.join(HERE, "daily.py")
 RUNNER = os.path.join(SCRIPTS, "task_runner.py")
 
 
-def _accounts():
+def _is_global(d):
+    auth = d.get("auth") or {}
+    if (auth.get("realm") or d.get("realm") or "").strip().lower() == "global":
+        return True
+    return (auth.get("domain") or "").strip().lower().endswith(".workbuddy.ai")
+
+
+def _accounts(include_global=False):
     out = []
     for p in sorted(glob.glob(os.path.join(AUTHS, "workbuddy-*.json"))):
         try:
             with open(p, encoding="utf-8") as f:
                 d = json.load(f)
             uid = ((d.get("account") or {}).get("uid") or "")
-            if uid:
-                out.append((uid, p))
+            if not uid:
+                continue
+            if _is_global(d) and not include_global:
+                continue
+            out.append((uid, p))
         except Exception:
             continue
     return out
@@ -67,6 +76,9 @@ def run_tasks(uid):
 def main():
     argv = sys.argv[1:] or ["auto"]
     only = None
+    include_global = "--include-global" in argv
+    if include_global:
+        argv.remove("--include-global")
     if "--account" in argv:
         i = argv.index("--account")
         if i + 1 >= len(argv):
@@ -76,11 +88,11 @@ def main():
         del argv[i:i + 2]
 
     action, rest = argv[0], argv[1:]
-    accts = _accounts()
+    accts = _accounts(include_global or bool(only))
     if only:
         accts = [a for a in accts if a[0].startswith(only)]
     if not accts:
-        print("no accounts found in auths/", file=sys.stderr)
+        print("no matching accounts in auths/", file=sys.stderr)
         return 2
 
     if action in ("status", "doctor", "claim", "growth"):
@@ -117,4 +129,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
