@@ -144,19 +144,39 @@ def _env(auth_file=None):
     return env
 
 
+def _ts():
+    return time.strftime("[%Y-%m-%d %H:%M:%S]")
+
+
+def _emit(line):
+    """Print one line with a timestamp prefix so the log is easy to read."""
+    print("%s %s" % (_ts(), line.rstrip("\r\n")), flush=True)
+
+
+def _run_streaming(cmd, cwd, env):
+    """Run a child process, prefixing every output line with a timestamp."""
+    p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                         errors="replace", bufsize=1)
+    for line in p.stdout:
+        _emit(line)
+    p.wait()
+    return p.returncode
+
+
 def run_daily(action="auto", auth_file=None):
-    return subprocess.call([sys.executable, DAILY, action], cwd=HERE, env=_env(auth_file))
+    return _run_streaming([sys.executable, DAILY, action], HERE, _env(auth_file))
 
 
 def run_tasks(uid):
-    return subprocess.call([sys.executable, RUNNER, uid, "--yes"], cwd=SCRIPTS, env=_env())
+    return _run_streaming([sys.executable, RUNNER, uid, "--yes"], SCRIPTS, _env())
 
 
 def run_accounts(accts, action):
     rc = 0
     failed = False
     for uid, path in accts:
-        print("== %s ==" % uid[:8], flush=True)
+        _emit("== %s ==" % uid[:8])
         if action in ("daily", "auto", "all"):
             c = run_daily("auto", path)
             rc = c or rc
@@ -198,24 +218,24 @@ def main():
     if action in ("status", "doctor", "claim", "growth"):
         rc = 0
         for uid, path in accts:
-            print("== %s ==" % uid[:8], flush=True)
+            _emit("== %s ==" % uid[:8])
             rc = run_daily(action, path) or rc
         return rc
 
     st = load_state()
     reason = guard_reason(st, force=force)
     if reason:
-        print("skip: %s" % reason, flush=True)
+        _emit("skip: %s" % reason)
         return 0
 
     if not force and not probe_network():
-        print("skip: network probe failed (%s:%d); attempt not counted"
-              % (PROBE_HOST, PROBE_PORT), flush=True)
+        _emit("skip: network probe failed (%s:%d); attempt not counted"
+              % (PROBE_HOST, PROBE_PORT))
         return 0
 
     if dry:
-        print("dry-run: guards passed, would run %s on %d account(s)"
-              % (action, len(accts)), flush=True)
+        _emit("dry-run: guards passed, would run %s on %d account(s)"
+              % (action, len(accts)))
         return 0
 
     st["attempt_count"] += 1
